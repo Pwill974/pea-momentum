@@ -24,10 +24,17 @@ assets = {
 @st.cache_data(ttl=3600)
 def load_data():
     all_tickers = list(assets.values()) + ["^VIX"]
-    df = yf.download(all_tickers, period="2y")['Close']
+    # Ajout de group_by et auto_adjust pour éviter les données vides (NaN)
+    df = yf.download(all_tickers, period="2y", auto_adjust=True)
+    
+    # Si le résultat est un MultiIndex, on extrait proprement les clôtures
+    if isinstance(df.columns, pd.MultiIndex):
+        df = df['Close']
     return df
 
 data = load_data()
+
+
 
 # --- 2. LOGIQUE DE CALCUL ---
 moms = {}
