@@ -15,7 +15,7 @@ st.markdown("""
 
 # --- 1. CHARGEMENT DES DONNÉES SÉCURISÉ ---
 assets = {
-    "USA (S&P 500)": "SPY",
+    "USA (S&P 500)": "IVV",
     "EUROPE (Stoxx 600)": "VGK",
     "EMERGING (MSCI EM)": "EEM",
     "MONDE (Socle)": "ACWI"
