@@ -13,13 +13,15 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 1. CHARGEMENT DES DONNÉES SÉCURISÉ ---
+
+}# --- 1. CHARGEMENT DES DONNÉES SÉCURISÉ ---
 assets = {
-    "USA (S&P 500)": "IVV",
+    "États-Unis (S&P 500)": "^GSPC",  # Utilisation de l'indice direct pour contourner le blocage Yahoo
     "EUROPE (Stoxx 600)": "VGK",
-    "EMERGING (MSCI EM)": "EEM",
+    "ÉMERGENT (MSCI EM)": "EEM",
     "MONDE (Socle)": "ACWI"
 }
+
 
 @st.cache_data(ttl=3600)
 def load_data():
