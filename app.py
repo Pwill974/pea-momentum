@@ -77,7 +77,7 @@ for name, ticker in assets.items():
             "_trend_raw": trend_ok
         }
 
-# Recherche du vainqueur sur les 3 zones de la poche Momentum (on exclut le Monde global de la compétition)
+# Recherche du vainqueur sur les 3 zones de la poche Momentum
 poche_momentum_assets = {k: v for k, v in moms.items() if k != "Monde (Socle Principal)"}
 winner = max(poche_momentum_assets, key=lambda x: poche_momentum_assets[x]["_score_raw"])
 
@@ -119,24 +119,60 @@ if signal_final != "CASH / SÉCURITÉ COMPTE ESPÈCES":
 else:
     st.sidebar.error(f"**2. Poche Momentum (Alerte Risque) :**\nLaissez **{poche_momentum_val:,.0f} €** non investis sur le Compte Espèces de votre PEA.")
 
-# --- 5. GRAPHIQUE DE PERFORMANCE ---
-st.subheader("📈 Graphique de force relative (6 derniers mois)")
+# --- 5. GRAPHIQUE DE PERFORMANCE AVEC SMA 200 EN POINTILLÉS ---
+st.subheader("📈 Graphique de force relative et sa Moyenne Mobile (SMA 200)")
 fig = go.Figure()
+
+# Palette de couleurs fixes pour associer proprement les prix et leurs SMA respectives
+colors = {
+    "États-Unis (S&P 500)": "#1f77b4",      # Bleu
+    "Europe (Stoxx 600)": "#ff7f0e",       # Orange
+    "Émergents (MSCI EM)": "#9467bd",      # Violet
+    "Monde (Socle Principal)": "#7f7f7f"   # Gris
+}
+
 for name, ticker in assets.items():
-    if ticker in data.columns and len(data[ticker]) >= 126:
-        norm_series = (data[ticker].tail(126) / data[ticker].iloc[-126]) * 100
+    if ticker in data.columns and len(data[ticker]) >= 200:
+        # Données de prix normalisées (base 100 à la date de départ d'il y a 6 mois)
+        prices_6m = data[ticker].tail(126)
+        base_price = data[ticker].iloc[-126]
+        norm_prices = (prices_6m / base_price) * 100
+        
+        # Calcul de la SMA 200 sur l'historique et normalisation sur la même base
+        sma200_raw = data[ticker].rolling(200).mean()
+        norm_sma200 = (sma200_raw.tail(126) / base_price) * 100
+        
         is_winner = (name == winner)
+        color = "#28a745" if is_winner else colors[name] # Vert pour le leader actuel
+        width = 3.5 if is_winner else 1.5
+        
+        # 1. Tracé de l'actif principal (Ligne pleine)
         fig.add_trace(go.Scatter(
-            x=norm_series.index, 
-            y=norm_series, 
+            x=norm_prices.index, 
+            y=norm_prices, 
             name=name, 
-            line=dict(width=3.5 if is_winner else 1.5, color="#28a745" if is_winner else None)
+            line=dict(width=width, color=color)
+        ))
+        
+        # 2. Tracé de la SMA 200 associée (Pointillés fins, même couleur atténuée)
+        fig.add_trace(go.Scatter(
+            x=norm_sma200.index, 
+            y=norm_sma200, 
+            name=f"SMA 200 - {name.split(' ')[0]}", 
+            line=dict(width=1, color=color, dash="dot"),
+            showlegend=False # Masqué de la légende pour ne pas surcharger
         ))
 
-fig.update_layout(template="plotly_white", hovermode="x unified", height=450, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+fig.update_layout(
+    template="plotly_white", 
+    hovermode="x unified", 
+    height=480, 
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+)
 st.plotly_chart(fig, use_container_width=True)
 
 # --- 6. TABLEAU DE SYNTHÈSE DES MARCHÉS ---
 st.subheader("📋 Matrice de Décision Spécifique")
 df_display = pd.DataFrame(moms).T[[ "Prix Actuel", "Score Momentum (6m)", "Au-dessus SMA 200", "Distance SMA 200", "Statut Système"]]
 st.table(df_display)
+
