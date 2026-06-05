@@ -13,46 +13,52 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-
-}
---- 1#. CHARGEMENT DES DONNÉES SÉCURISÉ ---
+# --- 1. CHARGEMENT DES DONNÉES SÉCURISÉ ---
 assets = {
-    "États-Unis (S&P 500)": "^GSPC",  # Utilisation de l'indice direct pour contourner le blocage Yahoo
+    "États-Unis (S&P 500)": "IVV",
     "EUROPE (Stoxx 600)": "VGK",
     "ÉMERGENT (MSCI EM)": "EEM",
     "MONDE (Socle)": "ACWI"
 }
-
 
 @st.cache_data(ttl=3600)
 def load_data():
     dict_data = {}
     all_tickers = list(assets.values()) + ["^VIX"]
     
-    # On télécharge chaque actif individuellement pour garantir la réception des prix
     for ticker in all_tickers:
         try:
-            ticker_data = yf.Ticker(ticker, session=None)
-            df_hist = ticker_data.history(period="2y")
+            # Téléchargement forcé par historique propre
+            df_hist = yf.download(ticker, period="2y", progress=False, auto_adjust=True)
             if not df_hist.empty:
-                dict_data[ticker] = df_hist['Close']
+                # Sécurité pour extraire la colonne Close sous forme de Série simple
+                if isinstance(df_hist.columns, pd.MultiIndex):
+                    dict_data[ticker] = df_hist['Close'][ticker]
+                else:
+                    dict_data[ticker] = df_hist['Close']
         except Exception as e:
             st.error(f"Erreur de téléchargement pour {ticker}")
             
-    return pd.DataFrame(dict_data).ffill() # Remplit les éventuelles cases vides par la dernière valeur connue
+    return pd.DataFrame(dict_data).ffill()
 
 data = load_data()
 
 # --- 2. LOGIQUE DE CALCUL ---
 moms = {}
-vix = data["^VIX"].iloc[-1] if "^VIX" in data.columns else 15.0
+vix = 15.0
+if "^VIX" in data.columns and not data["^VIX"].empty:
+    vix = float(data["^VIX"].iloc[-1])
+
 market_stress = "Élevé" if vix > 25 else "Calme" if vix < 15 else "Normal"
 
 for name, ticker in assets.items():
-    if ticker in data.columns:
-        current = data[ticker].iloc[-1]
-        past = data[ticker].iloc[-126] # Environ 6 mois de bourse
-        sma200 = data[ticker].rolling(200).mean().iloc[-1]
+    if ticker in data.columns and len(data[ticker]) >= 126:
+        current = float(data[ticker].iloc[-1])
+        past = float(data[ticker].iloc[-126]) # ~6 mois
+        
+        # Calcul de la SMA 200 jours
+        sma200_series = data[ticker].rolling(200).mean()
+        sma200 = float(sma200_series.iloc[-1]) if len(sma200_series) >= 200 else current
         
         moms[name] = {
             "score": ((current / past) - 1) * 100,
@@ -61,9 +67,9 @@ for name, ticker in assets.items():
             "dist_sma": ((current / sma200) - 1) * 100
         }
     else:
-        # Valeurs de secours au cas où un ticker manque au premier lancement
         moms[name] = {"score": 0.0, "price": 0.0, "trend": False, "dist_sma": 0.0}
 
+# Trouver le gagnant
 winner = max(moms, key=lambda x: moms[x]["score"])
 
 # --- 3. INTERFACE HAUTE (KPIs) ---
@@ -85,7 +91,7 @@ with col_stress:
 st.subheader("📊 Comparaison de Performance (Normalisée 100)")
 fig = go.Figure()
 for name, ticker in assets.items():
-    if ticker in data.columns:
+    if ticker in data.columns and len(data[ticker]) >= 126:
         norm_series = (data[ticker].tail(126) / data[ticker].iloc[-126]) * 100
         fig.add_trace(go.Scatter(x=norm_series.index, y=norm_series, name=name, line=dict(width=3 if name == winner else 1.5)))
 
