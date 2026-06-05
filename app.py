@@ -13,7 +13,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 1. CHARGEMENT DES DONNÉES ---
+# --- 1. CHARGEMENT DES DONNÉES SÉCURISÉ ---
 assets = {
     "USA (S&P 500)": "SPY",
     "EUROPE (Stoxx 600)": "VGK",
@@ -23,35 +23,45 @@ assets = {
 
 @st.cache_data(ttl=3600)
 def load_data():
+    dict_data = {}
     all_tickers = list(assets.values()) + ["^VIX"]
-    # Ajout de group_by et auto_adjust pour éviter les données vides (NaN)
-    df = yf.download(all_tickers, period="2y", auto_adjust=True)
     
-    # Si le résultat est un MultiIndex, on extrait proprement les clôtures
-    if isinstance(df.columns, pd.MultiIndex):
-        df = df['Close']
-    return df
+    # On télécharge chaque actif individuellement pour garantir la réception des prix
+    for ticker in all_tickers:
+        try:
+            ticker_data = yf.Ticker(ticker, session=None)
+            df_hist = ticker_data.history(period="2y")
+            if not df_hist.empty:
+                dict_data[ticker] = df_hist['Close']
+        except Exception as e:
+            st.error(f"Erreur de téléchargement pour {ticker}")
+            
+    return pd.DataFrame(dict_data).ffill() # Remplit les éventuelles cases vides par la dernière valeur connue
 
 data = load_data()
 
-
-
 # --- 2. LOGIQUE DE CALCUL ---
 moms = {}
+vix = data["^VIX"].iloc[-1] if "^VIX" in data.columns else 15.0
+market_stress = "Élevé" if vix > 25 else "Calme" if vix < 15 else "Normal"
+
 for name, ticker in assets.items():
-    current = data[ticker].iloc[-1]
-    past = data[ticker].iloc[-126] # 6 mois
-    sma200 = data[ticker].rolling(200).mean().iloc[-1]
-    moms[name] = {
-        "score": ((current / past) - 1) * 100,
-        "price": current,
-        "trend": current > sma200,
-        "dist_sma": ((current / sma200) - 1) * 100
-    }
+    if ticker in data.columns:
+        current = data[ticker].iloc[-1]
+        past = data[ticker].iloc[-126] # Environ 6 mois de bourse
+        sma200 = data[ticker].rolling(200).mean().iloc[-1]
+        
+        moms[name] = {
+            "score": ((current / past) - 1) * 100,
+            "price": current,
+            "trend": current > sma200,
+            "dist_sma": ((current / sma200) - 1) * 100
+        }
+    else:
+        # Valeurs de secours au cas où un ticker manque au premier lancement
+        moms[name] = {"score": 0.0, "price": 0.0, "trend": False, "dist_sma": 0.0}
 
 winner = max(moms, key=lambda x: moms[x]["score"])
-vix = data["^VIX"].iloc[-1]
-market_stress = "Élevé" if vix > 25 else "Calme" if vix < 15 else "Normal"
 
 # --- 3. INTERFACE HAUTE (KPIs) ---
 st.title("🏆 Stratégie Momentum Pro")
@@ -72,8 +82,9 @@ with col_stress:
 st.subheader("📊 Comparaison de Performance (Normalisée 100)")
 fig = go.Figure()
 for name, ticker in assets.items():
-    norm_series = (data[ticker].tail(126) / data[ticker].iloc[-126]) * 100
-    fig.add_trace(go.Scatter(x=norm_series.index, y=norm_series, name=name, line=dict(width=3 if name == winner else 1.5)))
+    if ticker in data.columns:
+        norm_series = (data[ticker].tail(126) / data[ticker].iloc[-126]) * 100
+        fig.add_trace(go.Scatter(x=norm_series.index, y=norm_series, name=name, line=dict(width=3 if name == winner else 1.5)))
 
 fig.update_layout(template="plotly_white", hovermode="x unified", height=500)
 st.plotly_chart(fig, use_container_width=True)
@@ -92,5 +103,4 @@ st.sidebar.write(f"Revenu mensuel générable actuel : **{revenu_potentiel:.2f} 
 st.subheader("📋 État de santé des marchés")
 df_status = pd.DataFrame(moms).T
 st.table(df_status.style.format({"score": "{:.2f}%", "price": "{:.2f}$", "dist_sma": "{:.2f}%"}))
-
 
