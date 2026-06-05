@@ -4,21 +4,23 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
 
-# --- CONFIGURATION STYLE ---
-st.set_page_config(page_title="Momentum Strategy Pro", layout="wide")
+# --- CONFIGURATION STYLE PRO ---
+st.set_page_config(page_title="Tableau de Bord PEA - Institutionnel", layout="wide")
 st.markdown("""
     <style>
-    .main { background-color: #f5f7f9; }
-    .stMetric { background-color: #ffffff; border-radius: 10px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .main { background-color: #f8f9fa; }
+    .stMetric { background-color: #ffffff; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); border: 1px solid #e9ecef; }
+    div.stButton > button:first-child { background-color: #007bff; color: white; border-radius: 5px; }
+    .status-badge { padding: 4px 8px; border-radius: 4px; color: white; font-weight: bold; text-align: center; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 1. CHARGEMENT DES DONNÉES SÉCURISÉ ---
+# --- 1. CONFIGURATION DES ACTIFS ---
 assets = {
     "États-Unis (S&P 500)": "IVV",
-    "EUROPE (Stoxx 600)": "VGK",
-    "ÉMERGENT (MSCI EM)": "EEM",
-    "MONDE (Socle)": "ACWI"
+    "Europe (Stoxx 600)": "VGK",
+    "Émergents (MSCI EM)": "EEM",
+    "Monde (Socle Principal)": "ACWI"
 }
 
 @st.cache_data(ttl=3600)
@@ -28,88 +30,113 @@ def load_data():
     
     for ticker in all_tickers:
         try:
-            # Téléchargement forcé par historique propre
             df_hist = yf.download(ticker, period="2y", progress=False, auto_adjust=True)
             if not df_hist.empty:
-                # Sécurité pour extraire la colonne Close sous forme de Série simple
                 if isinstance(df_hist.columns, pd.MultiIndex):
                     dict_data[ticker] = df_hist['Close'][ticker]
                 else:
                     dict_data[ticker] = df_hist['Close']
-        except Exception as e:
-            st.error(f"Erreur de téléchargement pour {ticker}")
+        except Exception:
+            pass
             
     return pd.DataFrame(dict_data).ffill()
 
 data = load_data()
 
-# --- 2. LOGIQUE DE CALCUL ---
+# --- 2. CALCULS STRATÉGIQUES AVANCÉS ---
 moms = {}
-vix = 15.0
-if "^VIX" in data.columns and not data["^VIX"].empty:
-    vix = float(data["^VIX"].iloc[-1])
-
-market_stress = "Élevé" if vix > 25 else "Calme" if vix < 15 else "Normal"
+vix = float(data["^VIX"].iloc[-1]) if "^VIX" in data.columns and not data["^VIX"].empty else 15.0
+market_stress = "Crise / Alerte" if vix > 25 else "Opportunité / Calme" if vix < 15 else "Normal"
 
 for name, ticker in assets.items():
     if ticker in data.columns and len(data[ticker]) >= 126:
         current = float(data[ticker].iloc[-1])
-        past = float(data[ticker].iloc[-126]) # ~6 mois
+        past = float(data[ticker].iloc[-126]) # 6 mois
         
-        # Calcul de la SMA 200 jours
         sma200_series = data[ticker].rolling(200).mean()
         sma200 = float(sma200_series.iloc[-1]) if len(sma200_series) >= 200 else current
         
+        score = ((current / past) - 1) * 100
+        trend_ok = current > sma200
+        
+        # Logique des feux tricolores
+        if score > 0 and trend_ok:
+            status = "🟢 ACHAT FORTE TENDANCE"
+        elif score > 0 or trend_ok:
+            status = "🟠 PRUDENCE / NEUTRE"
+        else:
+            status = "🔴 VENTE / SÉCURITÉ"
+            
         moms[name] = {
-            "score": ((current / past) - 1) * 100,
-            "price": current,
-            "trend": current > sma200,
-            "dist_sma": ((current / sma200) - 1) * 100
+            "Score Momentum (6m)": f"{score:.2f}%",
+            "Prix Actuel": f"{current:.2f}$",
+            "Au-dessus SMA 200": "Oui" if trend_ok else "Non",
+            "Distance SMA 200": f"{(((current / sma200) - 1) * 100):.2f}%",
+            "Statut Système": status,
+            "_score_raw": score,
+            "_trend_raw": trend_ok
         }
-    else:
-        moms[name] = {"score": 0.0, "price": 0.0, "trend": False, "dist_sma": 0.0}
 
-# Trouver le gagnant
-winner = max(moms, key=lambda x: moms[x]["score"])
+# Recherche du vainqueur sur les 3 zones de la poche Momentum (on exclut le Monde global de la compétition)
+poche_momentum_assets = {k: v for k, v in moms.items() if k != "Monde (Socle Principal)"}
+winner = max(poche_momentum_assets, key=lambda x: poche_momentum_assets[x]["_score_raw"])
 
-# --- 3. INTERFACE HAUTE (KPIs) ---
-st.title("🏆 Stratégie Momentum Pro")
-st.write(f"Dernière mise à jour : {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+# Sécurité VIX interne
+signal_final = winner
+if vix > 25:
+    signal_final = "CASH / SÉCURITÉ COMPTE ESPÈCES"
 
+# --- 3. INTERFACE PRINCIPALE ---
+st.title("🏛️ Terminal Quantitaire - PEA Momentum Pro")
+st.write(f"Flux d'analyse institutionnel mis à jour le : {datetime.now().strftime('%d/%m/%Y à %H:%M')}")
+st.markdown("---")
+
+# Métriques du haut
 col_sig, col_vix, col_stress = st.columns(3)
 with col_sig:
-    status_color = "green" if (moms[winner]["score"] > 0 and moms[winner]["trend"]) else "red"
-    st.metric("SIGNAL ACTUEL", winner if status_color == "green" else "CASH / SÉCURITÉ")
-
+    st.metric("🚨 ACTION STRATÉGIQUE DU MOIS", signal_final)
 with col_vix:
-    st.metric("INDICE VIX (PEUR)", f"{vix:.2f}", delta=market_stress, delta_color="inverse")
-
+    st.metric("📊 INDICE VIX (VOLATILITÉ)", f"{vix:.2f}", delta=market_stress, delta_color="inverse")
 with col_stress:
-    st.metric("MOMENTUM GAGNANT", f"{moms[winner]['score']:.2f}%")
+    st.metric("🔥 MEILLEUR MOMENTUM TRÈS COURT TERME", moms[winner]["Score Momentum (6m)"])
 
-# --- 4. GRAPHIQUE INTERACTIF ---
-st.subheader("📊 Comparaison de Performance (Normalisée 100)")
+# --- 4. ASSISTANT D'ORDRE DE BOURSE (SIDEBAR) ---
+st.sidebar.header("🧮 Assistant d'Ordre Fortuneo")
+st.sidebar.write("Entrez vos chiffres pour obtenir le script exact de vos achats du mois.")
+
+capital_total = st.sidebar.number_input("Valeur totale actuelle du PEA (€)", value=10000, step=500)
+apport_mois = st.sidebar.number_input("Versement ce mois-ci (€)", value=1000, step=100)
+
+total_a_repartir = capital_total + apport_mois
+poche_tranquille = total_a_repartir * 0.50
+poche_momentum_val = total_a_repartir * 0.50
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("📝 Votre feuille de route à copier :")
+st.sidebar.info(f"**1. Poche Tranquillité (Achat aveugle) :**\nAlimenter l'ETF MSCI World (WPEA) pour cibler un montant total de **{poche_tranquille:,.0f} €**.")
+if signal_final != "CASH / SÉCURITÉ COMPTE ESPÈCES":
+    st.sidebar.success(f"**2. Poche Momentum (Suivi) :**\nPlacer l'argent de cette poche sur l'actif : **{signal_final}** pour cibler un montant de **{poche_momentum_val:,.0f} €**.")
+else:
+    st.sidebar.error(f"**2. Poche Momentum (Alerte Risque) :**\nLaissez **{poche_momentum_val:,.0f} €** non investis sur le Compte Espèces de votre PEA.")
+
+# --- 5. GRAPHIQUE DE PERFORMANCE ---
+st.subheader("📈 Graphique de force relative (6 derniers mois)")
 fig = go.Figure()
 for name, ticker in assets.items():
     if ticker in data.columns and len(data[ticker]) >= 126:
         norm_series = (data[ticker].tail(126) / data[ticker].iloc[-126]) * 100
-        fig.add_trace(go.Scatter(x=norm_series.index, y=norm_series, name=name, line=dict(width=3 if name == winner else 1.5)))
+        is_winner = (name == winner)
+        fig.add_trace(go.Scatter(
+            x=norm_series.index, 
+            y=norm_series, 
+            name=name, 
+            line=dict(width=3.5 if is_winner else 1.5, color="#28a745" if is_winner else None)
+        ))
 
-fig.update_layout(template="plotly_white", hovermode="x unified", height=500)
+fig.update_layout(template="plotly_white", hovermode="x unified", height=450, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
 st.plotly_chart(fig, use_container_width=True)
 
-# --- 5. CALCULATEUR RETRAITE ---
-st.sidebar.header("🎯 Objectif Retraite")
-cap_actuel = st.sidebar.number_input("Capital Actuel (€)", value=10000)
-versement_mensuel = st.sidebar.number_input("Versement Mensuel (€)", value=1000)
-taux_retrait = 0.04
-
-st.sidebar.markdown("---")
-revenu_potentiel = (cap_actuel * taux_retrait) / 12
-st.sidebar.write(f"Revenu mensuel générable actuel : **{revenu_potentiel:.2f} € / mois**")
-
-# --- 6. TABLEAU RÉCAPITULATIF ---
-st.subheader("📋 État de santé des marchés")
-df_status = pd.DataFrame(moms).T
-st.table(df_status.style.format({"score": "{:.2f}%", "price": "{:.2f}$", "dist_sma": "{:.2f}%"}))
-
+# --- 6. TABLEAU DE SYNTHÈSE DES MARCHÉS ---
+st.subheader("📋 Matrice de Décision Spécifique")
+df_display = pd.DataFrame(moms).T[[ "Prix Actuel", "Score Momentum (6m)", "Au-dessus SMA 200", "Distance SMA 200", "Statut Système"]]
+st.table(df_display)
