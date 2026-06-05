@@ -14,7 +14,8 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 
-}# --- 1. CHARGEMENT DES DONNÉES SÉCURISÉ ---
+}
+--- 1#. CHARGEMENT DES DONNÉES SÉCURISÉ ---
 assets = {
     "États-Unis (S&P 500)": "^GSPC",  # Utilisation de l'indice direct pour contourner le blocage Yahoo
     "EUROPE (Stoxx 600)": "VGK",
